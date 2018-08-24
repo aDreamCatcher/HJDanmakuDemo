@@ -96,7 +96,7 @@
     danmakuModel.text = danmaku[@"m"];
     danmakuModel.textFont = [pArray[2] integerValue] == 1 ? [UIFont systemFontOfSize:20]: [UIFont systemFontOfSize:18];
     danmakuModel.textColor = [DanmakuFactory colorWithHexStr:pArray[3]];
-    [self.danmakuView sendDanmaku:danmakuModel forceRender:NO];
+    [self.danmakuView sendDanmaku:danmakuModel randomRender:YES];
 }
 
 - (IBAction)onPauseBtnClick:(id)sender {

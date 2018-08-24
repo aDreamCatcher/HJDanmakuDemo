@@ -29,6 +29,7 @@ static inline void onGlobalThreadAsync(void (^block)()) {
 @property (nonatomic, strong) HJDanmakuModel *danmakuModel;
 @property (nonatomic, strong) HJDanmakuCell  *danmakuCell;
 
+@property (nonatomic, assign) BOOL random; // only for .LR
 @property (nonatomic, assign) BOOL force;
 
 @property (nonatomic, assign) NSInteger toleranceCount;
@@ -74,6 +75,7 @@ static inline void onGlobalThreadAsync(void (^block)()) {
 + (HJDanmakuSource *)danmakuSourceWithMode:(HJDanmakuMode)mode;
 
 - (void)prepareDanmakus:(NSArray<HJDanmakuModel *> *)danmakus completion:(void (^)(void))completion;
+- (void)sendDanmaku:(HJDanmakuModel *)danmaku randomRender:(BOOL)random;
 - (void)sendDanmaku:(HJDanmakuModel *)danmaku forceRender:(BOOL)force;
 - (void)sendDanmakus:(NSArray<HJDanmakuModel *> *)danmakus;
 
@@ -99,6 +101,10 @@ static inline void onGlobalThreadAsync(void (^block)()) {
 }
 
 - (void)prepareDanmakus:(NSArray<HJDanmakuModel *> *)danmakus completion:(void (^)(void))completion {
+    NSAssert(NO, @"subClass implementation");
+}
+
+- (void)sendDanmaku:(HJDanmakuModel *)danmaku randomRender:(BOOL)random {
     NSAssert(NO, @"subClass implementation");
 }
 
@@ -149,6 +155,9 @@ static inline void onGlobalThreadAsync(void (^block)()) {
             completion();
         }
     });
+}
+
+- (void)sendDanmaku:(HJDanmakuModel *)danmaku randomRender:(BOOL)random {
 }
 
 - (void)sendDanmaku:(HJDanmakuModel *)danmaku forceRender:(BOOL)force {
@@ -250,6 +259,14 @@ static inline void onGlobalThreadAsync(void (^block)()) {
             completion();
         }
     });
+}
+
+- (void)sendDanmaku:(HJDanmakuModel *)danmaku randomRender:(BOOL)random {
+    HJDanmakuAgent *danmakuAgent = [[HJDanmakuAgent alloc] initWithDanmakuModel:danmaku];
+    danmakuAgent.random = random;
+    OSSpinLockLock(&_spinLock);
+    [self.danmakuAgents addObject:danmakuAgent];
+    OSSpinLockUnlock(&_spinLock);
 }
 
 - (void)sendDanmaku:(HJDanmakuModel *)danmaku forceRender:(BOOL)force {
@@ -727,20 +744,47 @@ static inline void onGlobalThreadAsync(void (^block)()) {
 - (CGFloat)layoutPyWithLRDanmaku:(HJDanmakuAgent *)danmakuAgent forTime:(HJDanmakuTime)time {
     u_int8_t maxPyIndex = self.configuration.numberOfLines > 0 ? self.configuration.numberOfLines: (CGRectGetHeight(_renderBounds) / self.configuration.cellHeight);
     NSMutableDictionary *retainer = [self retainerWithType:danmakuAgent.danmakuModel.danmakuType];
-    for (u_int8_t index = 0; index < maxPyIndex; index++) {
-        NSNumber *key = @(index);
-        HJDanmakuAgent *tempAgent = retainer[key];
-        if (!tempAgent) {
+    
+    if (danmakuAgent.random) {
+        NSMutableArray *freeRetainer = [NSMutableArray arrayWithCapacity:maxPyIndex];
+        for (u_int8_t index = 0; index < maxPyIndex; index++) {
+            NSNumber *key = @(index);
+            HJDanmakuAgent *tempAgent = retainer[key];
+            if (!tempAgent) {
+                [freeRetainer addObject:key];
+            }
+            else if (![self checkLRIsWillHitWithPreDanmaku:tempAgent danmaku:danmakuAgent]) {
+                [freeRetainer addObject:key];
+            }
+        }
+        
+        if (freeRetainer.count > 0) {
+            NSInteger freeIdx = arc4random() % freeRetainer.count;
+            
+            NSNumber *key = freeRetainer[freeIdx];
+            NSInteger index = key.integerValue;
+            
             danmakuAgent.yIdx = index;
             retainer[key] = danmakuAgent;
             return self.configuration.cellHeight * index;
         }
-        if (![self checkLRIsWillHitWithPreDanmaku:tempAgent danmaku:danmakuAgent]) {
-            danmakuAgent.yIdx = index;
-            retainer[key] = danmakuAgent;
-            return self.configuration.cellHeight * index;
+    } else {
+        for (u_int8_t index = 0; index < maxPyIndex; index++) {
+            NSNumber *key = @(index);
+            HJDanmakuAgent *tempAgent = retainer[key];
+            if (!tempAgent) {
+                danmakuAgent.yIdx = index;
+                retainer[key] = danmakuAgent;
+                return self.configuration.cellHeight * index;
+            }
+            else if (![self checkLRIsWillHitWithPreDanmaku:tempAgent danmaku:danmakuAgent]) {
+                danmakuAgent.yIdx = index;
+                retainer[key] = danmakuAgent;
+                return self.configuration.cellHeight * index;
+            }
         }
     }
+    
     if (danmakuAgent.force) {
         u_int8_t index = arc4random() % maxPyIndex;
         danmakuAgent.yIdx = index;
@@ -937,6 +981,13 @@ static inline void onGlobalThreadAsync(void (^block)()) {
         return;
     }
     [self.danmakuSource sendDanmakus:danmakus];
+}
+
+- (void)sendDanmaku:(HJDanmakuModel *)danmaku randomRender:(BOOL)random {
+    if (!danmaku) {
+        return;
+    }
+    [self.danmakuSource sendDanmaku:danmaku randomRender:random];
 }
 
 - (HJDanmakuModel *)danmakuForVisibleCell:(HJDanmakuCell *)danmakuCell {

@@ -74,6 +74,8 @@
 - (void)sendDanmaku:(HJDanmakuModel *)danmaku forceRender:(BOOL)force;
 - (void)sendDanmakus:(NSArray<HJDanmakuModel *> *)danmakus;
 
+- (void)sendDanmaku:(HJDanmakuModel *)danmaku randomRender:(BOOL)random;
+
 @end
 
 //_______________________________________________________________________________________________________________
